@@ -1,0 +1,2 @@
+FROM bitnami/kafka:latest
+COPY ./prom_exporter/ /usr/app/

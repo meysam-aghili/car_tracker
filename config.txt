@@ -1,0 +1,49 @@
+docker compose --profile iot up -d
+docker-compose --profile iot down
+
+netsh interface portproxy add v4tov4 listenport=8084 listenaddress=0.0.0.0 connectport=8085 connectaddress=172.20.150.76
+netsh interface portproxy add v4tov4 listenport=1883 listenaddress=0.0.0.0 connectport=1883 connectaddress=172.20.150.76
+
+{
+      "connector.class":"be.jovacon.kafka.connect.MQTTSourceConnector",
+      "mqtt.topic":"test",
+      "kafka.topic":"mqtt-test",
+      "mqtt.clientID":"client_kafka_connect",
+      "mqtt.broker":"tcp://mosquitto:1883",
+      "key.converter":"org.apache.kafka.connect.storage.StringConverter",
+      "key.converter.schemas.enable":"false",
+      "value.converter":"io.confluent.connect.avro.AvroConverter",
+      "value.converter.enhanced.avro.schema.support": true,
+      "value.converter.schema.registry.url": "http://schema-registry:8081",
+      "mqtt.userName": "meysam",
+      "mqtt.password": "meysam"
+    }
+
+
+
+{
+  "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
+  "tasks.max": "1",
+  "topics": "orders",
+  "value.converter": "io.confluent.connect.avro.AvroConverter",
+  "value.converter.schema.registry.url": "http://schema-registry:8081",
+  "value.converter.enhanced.avro.schema.support": true,
+  "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+  "connection.url": "jdbc:mysql://mysql:3306/test_db",
+  "connection.user": "mysql",
+  "connection.password": "mysql",
+  "transforms": "unwrap",
+  "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+  "transforms.unwrap.drop.tombstones": "false",
+
+  "table.name.format": "orders",
+  "pk.mode": "record_value",
+  "pk.fields": "id",
+  "insert.mode": "upsert",
+ 
+  "auto.create": "true",
+  "errors.tolerance": "all",
+  "errors.log.enable": "true",
+  "errors.log.include.messages": "true"
+}
+

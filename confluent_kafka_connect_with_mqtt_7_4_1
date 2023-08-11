@@ -1,0 +1,7 @@
+FROM confluentinc/cp-kafka-connect:7.4.1
+COPY ./connector_plugins/ /tmp/
+RUN confluent-hub install --no-prompt /tmp/confluentinc-kafka-connect-jdbc-10.7.3.zip && \
+    cp /tmp/mysql-connector-j-8.1.0.jar /usr/share/confluent-hub-components/confluentinc-kafka-connect-jdbc/lib && \
+    cp -r /tmp/kafka-connect-mqtt /usr/share/confluent-hub-components/kafka-connect-mqtt
+
+# docker build -t kafka_connect_mqtt:7.4.1 -f confluent_kafka_connect_with_mqtt_7_4_1 .

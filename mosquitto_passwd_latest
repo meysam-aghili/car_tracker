@@ -1,0 +1,3 @@
+FROM eclipse-mosquitto:latest
+COPY ./mosquitto/passwd /etc/mosquitto/passwd
+RUN mosquitto_passwd -b /etc/mosquitto/passwd meysam meysam

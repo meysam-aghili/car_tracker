@@ -1,0 +1,225 @@
+version: "3.7"
+
+networks:
+  mqtt-net:
+    driver: bridge
+
+services:
+
+  zookeeper:
+      image: bitnami/zookeeper:${ZOOKEEPER_VERSION}
+      networks:
+        - mqtt-net
+      container_name: zookeeper
+      environment:
+        ZOOKEEPER_CLIENT_PORT: 2181
+        ZOOKEEPER_TICK_TIME: 2000
+        ALLOW_ANONYMOUS_LOGIN: yes
+      ports:
+        - 22181:2181
+      volumes:
+        - zookeeper_mqtt_data:/bitnami
+      profiles: ["kafka"]
+
+  kafka:
+    image: kafka_with_prom_exporter:${KAFKA_VRESION}
+    networks:
+        - mqtt-net
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - 9092:9092
+      - 9094:9094
+      - 7075:7075
+    volumes:
+      - kafka_mqtt_data:/bitnami
+    environment:
+      KAFKA_BROKER_ID: 1
+      ALLOW_PLAINTEXT_LISTENER: yes
+      KAFKA_ENABLE_KRAFT: no
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,EXTERNAL://:9094
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_JMX_HOSTNAME: kafka
+      KAFKA_METRIC_REPORTERS: io.confluent.metrics.reporter.ConfluentMetricsReporter
+      METRICS_JMX_ENABLED: true
+      KAFKA_OPTS: -javaagent:/usr/app/jmx_prometheus_javaagent-0.17.2.jar=7075:/usr/app/prom-jmx-agent-config.yml
+    profiles: ["kafka"]
+
+  kafka-ui:
+    container_name: kafka-ui
+    image: provectuslabs/kafka-ui:${KAFKA_UI_VERSION}
+    networks:
+        - mqtt-net
+    ports:
+      - 8080:8080
+    environment:
+      DYNAMIC_CONFIG_ENABLED: true
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_METRICS_PORT: 9997
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: first_connect
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://connect:8083
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
+    volumes:
+      - kafka_ui_mqtt_data:/etc/kafkaui
+    depends_on:
+      - kafka
+      - connect
+    profiles: ["kafka"]
+    
+  connect:
+    image: kafka_connect_mqtt:${KAFKA_CONNECT_VERSION}
+    container_name: connect
+    networks:
+      - mqtt-net
+    ports:
+      - 8083:8083
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: kafka:9092
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: kafka-connect
+      CONNECT_CONFIG_STORAGE_TOPIC: _connect-configs
+      CONNECT_OFFSET_STORAGE_TOPIC: _connect-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: _connect-status
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+    depends_on:
+      - zookeeper
+      - kafka
+      - schema-registry
+    profiles: ["kafka"]
+    
+  schema-registry:
+    image: confluentinc/cp-schema-registry:${SCHEMA_REGISTRY_VERSION}
+    hostname: schema-registry
+    container_name: schema-registry
+    depends_on:
+      - zookeeper
+      - kafka
+    ports:
+      - 8081:8081
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_CONNECTION_URL: zookeeper:2181
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:9092
+      SCHEMA_REGISTRY_SCHEMA_REGISTRY_INTER_INSTANCE_PROTOCOL: http
+    networks:
+      - mqtt-net
+    profiles: ["kafka"]
+
+  mysql:
+    image: mysql:${MYSQL_VERSION}
+    hostname: mysql
+    container_name: mysql
+    environment:
+      MYSQL_DATABASE: iot
+      MYSQL_ROOT_PASSWORD: mauFJcuf5dhRMQrjj
+      MYSQL_USER: mysql
+      MYSQL_PASSWORD: mysql
+    ports:
+      - 3306:3306
+    volumes:
+      - mysql_mqtt_data:/var/lib/mysql
+    networks:
+      - mqtt-net
+    profiles: ["kafka"]
+
+  prometheus:
+    image: bitnami/prometheus:${PROMETHEUS_VERSION}
+    container_name: prometheus
+    ports:
+      - 9090:9090
+    volumes:
+      - ./prom_exporter/prometheus.yml:/opt/bitnami/prometheus/conf/prometheus.yml
+    networks:
+      - mqtt-net
+    #depends_on:
+      #- kafka
+    profiles: ["kafka", "iot"]
+
+  grafana:
+    image: grafana/grafana:${GRAFANA_VERSION}
+    container_name: grafana
+    ports:
+      - 3000:3000
+    networks:
+      - mqtt-net
+    depends_on:
+      - prometheus
+    volumes:
+      - grafana_mqtt_data:/var/lib/grafana
+    profiles: ["kafka", "iot"]
+
+  mosquitto:
+    image: mosquitto:${MOSQUITTO_VERSION}
+    container_name: mosquitto
+    ports:
+      - 1883:1883
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./mosquitto/passwd:/etc/mosquitto/passwd
+    networks:
+      - mqtt-net
+    profiles: ["kafka","iot"]
+
+  portainer:
+    image: portainer/portainer-ce:${PORTAINER_VERSION}
+    container_name: portainer
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_mqtt_data:/data
+    ports:
+      - 9000:9000
+    networks:
+      - mqtt-net
+    profiles: ["kafka"]
+
+  mosquitto-exporter:
+    image: sapcc/mosquitto-exporter:${MOSQUITTO_EXPORTER_VERSION}
+    container_name: mosquitto-exporter
+    ports: 
+      - 9234:9234
+    networks:
+      - mqtt-net  
+    depends_on:
+      - mosquitto
+    profiles: ["kafka","iot"]
+    command: --endpoint tcp://mosquitto:1883 --user meysam --pass meysam
+
+  web-server:
+    image: nginx:stable-alpine3.17
+    container_name: web-server
+    #volumes:
+    #- ./templates:/etc/nginx/templates
+    ports:
+      - 8085:80
+    environment:
+      NGINX_HOST: "localhost"
+      NGINX_PORT: "80"
+    networks:
+      - mqtt-net
+    profiles: ["kafka","iot"]
+
+volumes:
+  zookeeper_mqtt_data:
+    driver: local
+  kafka_mqtt_data:
+    driver: local
+  kafka_ui_mqtt_data:
+    driver: local
+  mysql_mqtt_data:
+    driver: local
+  grafana_mqtt_data:
+    driver: local
+  portainer_mqtt_data:
+    driver: local
