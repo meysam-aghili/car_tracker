@@ -1,0 +1,1 @@
+ C:\Users\meysam\.platformio\penv\Scripts\platformio.exe device monitor --environment nodemcuv2 -f log2file

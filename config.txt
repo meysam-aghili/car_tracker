@@ -1,25 +1,97 @@
 docker compose --profile iot up -d
 docker-compose --profile iot down
 
+docker compose --profile iot --profile kafka up -d
+
 netsh interface portproxy add v4tov4 listenport=8084 listenaddress=0.0.0.0 connectport=8085 connectaddress=172.20.150.76
 netsh interface portproxy add v4tov4 listenport=1883 listenaddress=0.0.0.0 connectport=1883 connectaddress=172.20.150.76
 
+/bin/ksql http://ksqldb:8088
+
 {
-      "connector.class":"be.jovacon.kafka.connect.MQTTSourceConnector",
-      "mqtt.topic":"test",
-      "kafka.topic":"mqtt-test",
-      "mqtt.clientID":"client_kafka_connect",
-      "mqtt.broker":"tcp://mosquitto:1883",
-      "key.converter":"org.apache.kafka.connect.storage.StringConverter",
-      "key.converter.schemas.enable":"false",
-      "value.converter":"io.confluent.connect.avro.AvroConverter",
-      "value.converter.enhanced.avro.schema.support": true,
-      "value.converter.schema.registry.url": "http://schema-registry:8081",
-      "mqtt.userName": "meysam",
-      "mqtt.password": "meysam"
-    }
+  "name": "source_mosquitto",
+	"connector.class": "be.jovacon.kafka.connect.MQTTSourceConnector",
+	"mqtt.broker": "tcp://mosquitto:1883",
+  "mqtt.clientID": "client_kafka_connect",
+  "mqtt.userName": "meysam",
+	"mqtt.password": "meysam",
+  "mqtt.topic": "test",
+	"kafka.topic": "test",
+  "transforms": "dropAppIdHeader",
+  "transforms.dropAppIdHeader.type": "org.apache.kafka.connect.transforms.DropHeaders",
+  "transforms.dropAppIdHeader.headers": "mqtt.message.qos,mqtt.message.duplicate,mqtt.message.id",
+  "value.converter":"org.apache.kafka.connect.storage.StringConverter",
+  "value.converter.schemas.enable": "false",
+	"converter.encoding": "UTF-8"
+}
 
 
+org.apache.kafka.connect.json.JsonConverter
+"value.converter.schema.registry.url": "http://schema-registry:8081"
+
+,ValueToKey
+"transforms.ValueToKey.type": "org.apache.kafka.connect.transforms.ValueToKey",
+"transforms.ValueToKey.fields": "device_id,datetime",
+
+
+https://github.com/confluentinc/ksql/blob/master/docker-compose.yml
+https://docs.ksqldb.io/en/latest/operate-and-deploy/installation/
+
+CREATE STREAM test_stream(device_id INT,datetime VARCHAR) WITH (KAFKA_TOPIC='test',VALUE_FORMAT='DELIMITED') EMIT CHANGES;
+
+CREATE STREAM test_stream_2 AS SELECT * FROM test EMIT CHANGES;
+
+	
+CREATE STREAM readings (
+    sensor VARCHAR KEY,
+    location VARCHAR,
+    reading INT
+) WITH (
+    kafka_topic = 'readings',
+    partitions = 3,
+    value_format = 'json'
+);
+
+
+
+
+
+{
+   "topics":"iot-metrics-time-series",
+   "connector.class" : "io.confluent.connect.prometheus.PrometheusMetricsSinkConnector",
+   "tasks.max" : "1",
+   "confluent.topic.bootstrap.servers":"kafka:9092",
+   "prometheus.scrape.url": "http://0.0.0.0:8084/iot-metrics-time-series",
+   "prometheus.listener.url": "http://0.0.0.0:8084/iot-metrics-time-series",
+   "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+   "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+   "value.converter.schemas.enable": false,
+   "key.converter.schemas.enable":false,
+   "reporter.bootstrap.servers": "kafka:9092",
+   "reporter.result.topic.replication.factor": "1",
+   "reporter.error.topic.replication.factor": "1",
+   "behavior.on.error": "log"
+  }
+
+
+{
+  "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
+  "tasks.max": "1",
+  "topics": "test",
+  "value.converter": "org.apache.kafka.connect.storage.StringConverter",
+  "key.converter":"org.apache.kafka.connect.storage.StringConverter",
+  "key.converter.schemas.enable":false,
+  "value.converter.schemas.enable":"false",
+  "connection.url": "jdbc:mysql://mysql:3306/iot",
+  "connection.user": "mysql",
+  "connection.password": "mysql",
+  "table.name.format": "test",
+  "insert.mode": "INSERT",
+  "auto.create": "true",
+  "pk.mode": "none",
+  "delete.enabled": "false",
+  'key.ignore' = 'true',
+}
 
 {
   "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
@@ -46,4 +118,3 @@ netsh interface portproxy add v4tov4 listenport=1883 listenaddress=0.0.0.0 conne
   "errors.log.enable": "true",
   "errors.log.include.messages": "true"
 }
-
