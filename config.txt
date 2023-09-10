@@ -1,12 +1,11 @@
+------------------------------------done
+
 docker compose --profile iot up -d
 docker-compose --profile iot down
-
 docker compose --profile iot --profile kafka up -d
 
 netsh interface portproxy add v4tov4 listenport=8084 listenaddress=0.0.0.0 connectport=8085 connectaddress=172.20.150.76
 netsh interface portproxy add v4tov4 listenport=1883 listenaddress=0.0.0.0 connectport=1883 connectaddress=172.20.150.76
-
-/bin/ksql http://ksqldb:8088
 
 {
   "name": "source_mosquitto",
@@ -25,6 +24,7 @@ netsh interface portproxy add v4tov4 listenport=1883 listenaddress=0.0.0.0 conne
 	"converter.encoding": "UTF-8"
 }
 
+------------------------------------doing
 
 org.apache.kafka.connect.json.JsonConverter
 "value.converter.schema.registry.url": "http://schema-registry:8081"
@@ -33,28 +33,19 @@ org.apache.kafka.connect.json.JsonConverter
 "transforms.ValueToKey.type": "org.apache.kafka.connect.transforms.ValueToKey",
 "transforms.ValueToKey.fields": "device_id,datetime",
 
+CREATE TABLE test2 (
+     device_id INT PRIMARY KEY,
+     datetime VARCHAR
+   ) WITH (
+     KAFKA_TOPIC = 'test', 
+     VALUE_FORMAT = 'JSON'
+   );
 
-https://github.com/confluentinc/ksql/blob/master/docker-compose.yml
-https://docs.ksqldb.io/en/latest/operate-and-deploy/installation/
-
-CREATE STREAM test_stream(device_id INT,datetime VARCHAR) WITH (KAFKA_TOPIC='test',VALUE_FORMAT='DELIMITED') EMIT CHANGES;
-
-CREATE STREAM test_stream_2 AS SELECT * FROM test EMIT CHANGES;
-
-	
-CREATE STREAM readings (
-    sensor VARCHAR KEY,
-    location VARCHAR,
-    reading INT
-) WITH (
-    kafka_topic = 'readings',
-    partitions = 3,
-    value_format = 'json'
-);
+ CREATE STREAM test3 ( device_id INT ,datetime VARCHAR) WITH 
+  (kafka_topic='test', value_format='JSON');
 
 
-
-
+------------------------------------todo
 
 {
    "topics":"iot-metrics-time-series",
