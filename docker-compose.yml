@@ -19,7 +19,7 @@ services:
         - 22181:2181
       volumes:
         - zookeeper_mqtt_data:/bitnami
-      profiles: ["kafka"]
+      profiles: ["kafka","influx"]
 
   kafka:
     image: kafka_with_prom_exporter:${KAFKA_VRESION}
@@ -47,7 +47,7 @@ services:
       KAFKA_METRIC_REPORTERS: io.confluent.metrics.reporter.ConfluentMetricsReporter
       METRICS_JMX_ENABLED: true
       KAFKA_OPTS: -javaagent:/usr/app/jmx_prometheus_javaagent-0.17.2.jar=7075:/usr/app/prom-jmx-agent-config.yml
-    profiles: ["kafka"]
+    profiles: ["kafka","influx"]
 
   kafka-ui:
     container_name: kafka-ui
@@ -69,11 +69,12 @@ services:
     depends_on:
       - kafka
       - connect
-    profiles: ["kafka"]
+    profiles: ["kafka","influx"]
     
   connect:
     image: kafka_connect_mqtt:${KAFKA_CONNECT_VERSION}
     container_name: connect
+    hostname: connect
     networks:
       - mqtt-net
     ports:
@@ -81,22 +82,23 @@ services:
     environment:
       CONNECT_BOOTSTRAP_SERVERS: kafka:9092
       CONNECT_REST_PORT: 8083
-      CONNECT_GROUP_ID: kafka-connect
+      CONNECT_GROUP_ID: connect
       CONNECT_CONFIG_STORAGE_TOPIC: _connect-configs
       CONNECT_OFFSET_STORAGE_TOPIC: _connect-offsets
       CONNECT_STATUS_STORAGE_TOPIC: _connect-status
       CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
       CONNECT_VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
       CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8081
-      CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
+      CONNECT_REST_ADVERTISED_HOST_NAME: connect
       CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
       CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
       CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components
     depends_on:
       - zookeeper
       - kafka
       - schema-registry
-    profiles: ["kafka"]
+    profiles: ["kafka","influx"]
     
   schema-registry:
     image: confluentinc/cp-schema-registry:${SCHEMA_REGISTRY_VERSION}
@@ -115,24 +117,7 @@ services:
       SCHEMA_REGISTRY_SCHEMA_REGISTRY_INTER_INSTANCE_PROTOCOL: http
     networks:
       - mqtt-net
-    profiles: ["kafka"]
-
-  mysql:
-    image: mysql:${MYSQL_VERSION}
-    hostname: mysql
-    container_name: mysql
-    environment:
-      MYSQL_DATABASE: iot
-      MYSQL_ROOT_PASSWORD: mauFJcuf5dhRMQrjj
-      MYSQL_USER: mysql
-      MYSQL_PASSWORD: mysql
-    ports:
-      - 3306:3306
-    volumes:
-      - mysql_mqtt_data:/var/lib/mysql
-    networks:
-      - mqtt-net
-    profiles: ["kafka"]
+    profiles: ["kafka","influx"]
 
   prometheus:
     image: bitnami/prometheus:${PROMETHEUS_VERSION}
@@ -140,12 +125,10 @@ services:
     ports:
       - 9090:9090
     volumes:
-      - ./prom_exporter/prometheus.yml:/opt/bitnami/prometheus/conf/prometheus.yml
+      - ./kafka/prom_exporter/prometheus.yml:/opt/bitnami/prometheus/conf/prometheus.yml
     networks:
       - mqtt-net
-    #depends_on:
-      #- kafka
-    profiles: ["kafka", "iot"]
+    profiles: ["prometheus"]
 
   grafana:
     image: grafana/grafana:${GRAFANA_VERSION}
@@ -154,47 +137,9 @@ services:
       - 3000:3000
     networks:
       - mqtt-net
-    depends_on:
-      - prometheus
     volumes:
       - grafana_mqtt_data:/var/lib/grafana
-    profiles: ["kafka", "iot"]
-
-  mosquitto:
-    image: mosquitto:${MOSQUITTO_VERSION}
-    container_name: mosquitto
-    ports:
-      - 1883:1883
-    volumes:
-      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
-      - ./mosquitto/passwd:/etc/mosquitto/passwd
-    networks:
-      - mqtt-net
-    profiles: ["kafka","iot"]
-
-  portainer:
-    image: portainer/portainer-ce:${PORTAINER_VERSION}
-    container_name: portainer
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_mqtt_data:/data
-    ports:
-      - 9000:9000
-    networks:
-      - mqtt-net
     profiles: ["kafka"]
-
-  mosquitto-exporter:
-    image: sapcc/mosquitto-exporter:${MOSQUITTO_EXPORTER_VERSION}
-    container_name: mosquitto-exporter
-    ports: 
-      - 9234:9234
-    networks:
-      - mqtt-net  
-    depends_on:
-      - mosquitto
-    profiles: ["kafka","iot"]
-    command: --endpoint tcp://mosquitto:1883 --user meysam --pass meysam
 
   ksqldb:
     image: confluentinc/ksqldb-server:${KSQL_VERSION}
@@ -213,33 +158,71 @@ services:
     environment:
       KSQL_HOST_NAME: ksqldb
       KSQL_LISTENERS: http://0.0.0.0:8088
-      KSQL_BOOTSTRAP_SERVERS: "kafka:9092"
-      KSQL_KSQL_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
+      KSQL_BOOTSTRAP_SERVERS: kafka:9092
+      KSQL_KSQL_SCHEMA_REGISTRY_URL: http://schema-registry:8081
       KSQL_KSQL_LOGGING_PROCESSING_STREAM_AUTO_CREATE: true
       KSQL_KSQL_LOGGING_PROCESSING_TOPIC_AUTO_CREATE: true
-      KSQL_CONFIG_DIR: "/etc/ksqldb"
-      KSQL_LOG4J_OPTS: "-Dlog4j.configuration=file:/etc/ksqldb/log4j.properties"
+      KSQL_CONFIG_DIR: /etc/ksqldb
+      KSQL_LOG4J_OPTS: -Dlog4j.configuration=file:/etc/ksqldb/log4j.properties
       KSQL_CONNECT_URL: http://connect:8083
-      KSQL_KSQL_SERVICE_ID: ksqldb-kafka-connect
-      KSQL_KSQL_CONNECT_WORKER_CONFIG: /etc/ksqldb/connect.properties
-      KSQL_CONNECT_BOOTSTRAP_SERVERS: kafka:9092
-      KSQL_CONNECT_REST_ADVERTISED_HOST_NAME: 'ksqldb'
-      KSQL_CONNECT_REST_PORT: 8083
-      KSQL_CONNECT_GROUP_ID: kafka-connect
-      KSQL_CONNECT_CONFIG_STORAGE_TOPIC: _connect-configs
-      KSQL_CONNECT_OFFSET_STORAGE_TOPIC: _connect-offsets
-      KSQL_CONNECT_STATUS_STORAGE_TOPIC: _connect-status
-      KSQL_CONNECT_KEY_CONVERTER: "io.confluent.connect.avro.AvroConverter"
-      KSQL_CONNECT_VALUE_CONVERTER: "io.confluent.connect.avro.AvroConverter"
-      KSQL_CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
-      KSQL_CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
-      KSQL_CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
-      KSQL_CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: '1'
-      KSQL_CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: '1'
-      KSQL_CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: '1'
-      KSQL_CONNECT_PLUGIN_PATH: '/usr/share/kafka/plugins/'
       #KSQL_KSQL_EXTENSION_DIR: /opt/ksqldb-udfs
+    profiles: ["kafka"]
+
+  rabbitmq:
+    image: rabbitmq:3.11.23-management
+    hostname: rabbitmq
+    container_name: rabbitmq
+    ports:
+      - 1883:1883
+      - 5672:5672
+      - 15672:15672
+      - 15675:15675
+    command: "/bin/bash -c \"rabbitmq-plugins enable --offline rabbitmq_mqtt rabbitmq_management rabbitmq_amqp1_0; rabbitmq-server\""
+    networks:
+      - mqtt-net
+    volumes:
+      - "./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf"
+      - "./rabbitmq/advanced.config:/etc/rabbitmq/advanced.config"
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin  
     profiles: ["kafka","iot"]
+
+  influxdb:
+      image: influxdb:2.7.1
+      hostname: influxdb
+      container_name: influxdb
+      ports:
+          - 8082:8083
+          - 8086:8086
+          - 8090:8090
+      environment:
+          DOCKER_INFLUXDB_INIT_MODE: setup
+          DOCKER_INFLUXDB_INIT_USERNAME: admin
+          DOCKER_INFLUXDB_INIT_PASSWORD: Sh!@#123
+          DOCKER_INFLUXDB_INIT_ORG: iot
+          DOCKER_INFLUXDB_INIT_BUCKET: init_test
+          DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: QANAowpBjEIlwFYefIArs7gbcA9CqfAQzuHm062t840adf6lQgCmbLeqd6ZGJTrg1fWhH6ClZJJ9JywF6EyEHQ==
+      networks:
+        - mqtt-net
+      volumes:
+          - influxdb_mqtt_data:/var/lib/influxdb2
+      profiles: ["kafka","influx"]
+
+  telegraf:
+    image: telegraf:1.28.1-alpine
+    hostname: telegraf
+    container_name: telegraf
+    environment:
+        influxdb_token: QANAowpBjEIlwFYefIArs7gbcA9CqfAQzuHm062t840adf6lQgCmbLeqd6ZGJTrg1fWhH6ClZJJ9JywF6EyEHQ==
+    depends_on:
+        - influxdb
+    restart: unless-stopped
+    networks:
+      - mqtt-net
+    volumes:
+        - ./influxdb/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf
+    profiles: ["kafka","influx"]
 
 volumes:
   zookeeper_mqtt_data:
@@ -252,9 +235,5 @@ volumes:
     driver: local
   grafana_mqtt_data:
     driver: local
-  portainer_mqtt_data:
+  influxdb_mqtt_data:
     driver: local
- # mqtt_ksql_cli_data:
-    #driver: local
-  #mqtt_ksqldb_data:
-   # driver: local

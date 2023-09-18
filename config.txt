@@ -8,31 +8,22 @@ netsh interface portproxy add v4tov4 listenport=8084 listenaddress=0.0.0.0 conne
 netsh interface portproxy add v4tov4 listenport=1883 listenaddress=0.0.0.0 connectport=1883 connectaddress=172.20.150.76
 
 {
-  "name": "source_mosquitto",
+  "name": "source_mqtt",
 	"connector.class": "be.jovacon.kafka.connect.MQTTSourceConnector",
-	"mqtt.broker": "tcp://mosquitto:1883",
+	"mqtt.broker": "tcp://rabbitmq:1883",
   "mqtt.clientID": "client_kafka_connect",
-  "mqtt.userName": "meysam",
-	"mqtt.password": "meysam",
+  "mqtt.userName": "admin",
+	"mqtt.password": "admin",
   "mqtt.topic": "test",
 	"kafka.topic": "test",
   "transforms": "dropAppIdHeader",
   "transforms.dropAppIdHeader.type": "org.apache.kafka.connect.transforms.DropHeaders",
   "transforms.dropAppIdHeader.headers": "mqtt.message.qos,mqtt.message.duplicate,mqtt.message.id",
   "value.converter":"org.apache.kafka.connect.storage.StringConverter",
-  "value.converter.schemas.enable": "false",
-	"converter.encoding": "UTF-8"
+  "value.converter.schemas.enable": "false"
 }
 
-------------------------------------doing
-
-org.apache.kafka.connect.json.JsonConverter
-"value.converter.schema.registry.url": "http://schema-registry:8081"
-
-,ValueToKey
-"transforms.ValueToKey.type": "org.apache.kafka.connect.transforms.ValueToKey",
-"transforms.ValueToKey.fields": "device_id,datetime",
-
+https://docs.ksqldb.io/en/latest/developer-guide/ksqldb-reference/create-stream/
 CREATE TABLE test2 (
      device_id INT PRIMARY KEY,
      datetime VARCHAR
@@ -40,9 +31,21 @@ CREATE TABLE test2 (
      KAFKA_TOPIC = 'test', 
      VALUE_FORMAT = 'JSON'
    );
+CREATE STREAM s_test ( device_id INT ,datetime VARCHAR) WITH 
+  (kafka_topic='test', value_format='JSON') EMIT CHANGES;
+CREATE STREAM s_test4
+with (
+  KAFKA_TOPIC = 's_test4',
+  VALUE_FORMAT = 'AVRO'
+) AS SELECT datetime FROM s_test EMIT CHANGES;
 
- CREATE STREAM test3 ( device_id INT ,datetime VARCHAR) WITH 
-  (kafka_topic='test', value_format='JSON');
+------------------------------------doing
+https://www.rabbitmq.com/prometheus.html
+
+https://github.com/rabbitmq/rabbitmq-server/blob/main/deps/rabbitmq_prometheus/docker/docker-compose-metrics.yml
+,ValueToKey
+"transforms.ValueToKey.type": "org.apache.kafka.connect.transforms.ValueToKey",
+"transforms.ValueToKey.fields": "device_id,datetime",
 
 
 ------------------------------------todo
@@ -76,12 +79,7 @@ CREATE TABLE test2 (
   "connection.url": "jdbc:mysql://mysql:3306/iot",
   "connection.user": "mysql",
   "connection.password": "mysql",
-  "table.name.format": "test",
-  "insert.mode": "INSERT",
-  "auto.create": "true",
-  "pk.mode": "none",
-  "delete.enabled": "false",
-  'key.ignore' = 'true',
+  "table.name.format": "test"
 }
 
 {
@@ -109,3 +107,42 @@ CREATE TABLE test2 (
   "errors.log.enable": "true",
   "errors.log.include.messages": "true"
 }
+
+
+------------------------------------archive
+
+  mosquitto:
+    image: mosquitto:${MOSQUITTO_VERSION}
+    container_name: mosquitto
+    ports:
+      - 1884:1883
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./mosquitto/passwd:/etc/mosquitto/passwd
+    networks:
+      - mqtt-net
+    profiles: ["iot2"]
+
+  mosquitto-exporter:
+    image: sapcc/mosquitto-exporter:${MOSQUITTO_EXPORTER_VERSION}
+    container_name: mosquitto-exporter
+    ports: 
+      - 9234:9234
+    networks:
+      - mqtt-net  
+    depends_on:
+      - mosquitto
+    profiles: ["iot"]
+    command: --endpoint tcp://mosquitto:1883 --user meysam --pass meysam
+
+  portainer:
+    image: portainer/portainer-ce:${PORTAINER_VERSION}
+    container_name: portainer
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_mqtt_data:/data
+    ports:
+      - 9000:9000
+    networks:
+      - mqtt-net
+    profiles: ["kafka"]

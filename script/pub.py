@@ -9,7 +9,7 @@ def on_connect(client, userdata, flags, return_code):
         print("could not connect, return code:", return_code)
 
 client = mqtt.Client("ClientPub")
-client.username_pw_set(username="meysam", password="meysam")
+client.username_pw_set(username="admin", password="admin")
 client.on_connect=on_connect
 client.connect('localhost', 1883)
 
@@ -24,7 +24,7 @@ try:
         result = client.publish(topic, '{'+'"device_id":1,"datetime":"2023-09-06 16:03:46","latitude":35.75318883,"longitude":51.19973483,"satellites":0,"altitude":0,"speed":0.31,"course":0,"hdop":0'+'}')
         status = result[0]
         if status == 0:
-            print("Message is published to topic " + topic)
+            print("Message {0} is published to topic {1}".format(msg_count,topic))
         else:
             print("Failed to send message to topic " + topic)
 finally:

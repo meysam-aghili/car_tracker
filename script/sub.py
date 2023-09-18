@@ -8,12 +8,12 @@ def on_message(client, userdata, message):
 def on_connect(client, userdata, flags, return_code):
     if return_code == 0:
         print("connected")
-        client.subscribe("test")
+        client.subscribe("test2")
     else:
         print("could not connect, return code:", return_code)
 
 client = mqtt.Client("ClientSub")
-client.username_pw_set(username="meysam", password="meysam")
+client.username_pw_set(username="admin", password="admin")
 client.on_connect=on_connect
 client.on_message=on_message
 client.connect('localhost', 1883)
