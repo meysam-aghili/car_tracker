@@ -8,7 +8,7 @@ def on_message(client, userdata, message):
 def on_connect(client, userdata, flags, return_code):
     if return_code == 0:
         print("connected")
-        client.subscribe("test2")
+        client.subscribe("hit_sensor")
     else:
         print("could not connect, return code:", return_code)
 

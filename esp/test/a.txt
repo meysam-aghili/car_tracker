@@ -1,1 +1,19 @@
  C:\Users\meysam\.platformio\penv\Scripts\platformio.exe device monitor --environment nodemcuv2 -f log2file
+
+https://roboticsbackend.com/arduino-object-oriented-programming-oop/
+
+ log to topic
+ general setting file
+ if default ommunication
+
+
+
+ void gps_standby() {
+  // standby GPS
+  gps_port.print("$PMTK161,0*28\r\n");
+}
+
+void gps_wakeup() {
+  // exit GPS standby
+  gps_port.print("\r\n");
+}

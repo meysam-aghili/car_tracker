@@ -1,30 +1,32 @@
-#include <ESP8266WiFi.h>
+//#include <ESP8266WiFi.h>
 #include <SoftwareSerial.h>
 #include <TinyGPSPlus.h>
 #include <ArduinoJson.h>
 
-SoftwareSerial gps_serial_at(4, 5); // D7 , D8
+SoftwareSerial gps_serial_at(14, 15); // D7 , D8
 TinyGPSPlus gps;
 unsigned long gps_check_time_empty;
 unsigned long gps_check_time_publish;
 
-auto add_zero = [](String a)
+String add_zero(String text)
 {
-  if (a.length() == 1)
+  if (text.length() == 1)
   {
-    return "0" + a;
+    return "0" + text;
   }
   else
   {
-    return a;
+    return text;
   }
-};
+}
+
 String gps_json_data;
 
 boolean get_gps_data()
 {
   while (gps_serial_at.available() > 0)
   {
+    Serial.write(gps_serial_at.read());
     if (gps.encode(gps_serial_at.read()) && gps.location.isValid() && gps.time.isValid())
     {
       StaticJsonDocument<256> doc;
@@ -61,18 +63,19 @@ boolean get_gps_data()
 
 void setup()
 {
-  ESP.wdtDisable();    // disable software wdt to prevent resets
-  ESP.wdtEnable(8000); // enable software wdt and set time to 8 second to prevent resets
+  //ESP.wdtDisable();    // disable software wdt to prevent resets
+  //ESP.wdtEnable(8000); // enable software wdt and set time to 8 second to prevent resets
   Serial.begin(115200);
   Serial.println("Wait...");
   gps_serial_at.begin(9600);
   delay(1000);
   Serial.println("setup succeded");
+  gps_check_time_publish = millis();
 }
 
 void loop()
 {
-  ESP.wdtFeed();
+ // ESP.wdtFeed();
   
   if ((millis() - gps_check_time_publish) >= 5000)
   {
