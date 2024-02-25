@@ -1,0 +1,27 @@
+AT+CBC : battery
++CBC: x,y,z
+x:state 1:no charger 2:charging 3:full charged
+y:battery level(0-100)
+z:voltage
+-------------------
+AT+CSQ : gsm signal quality
+2-9 very weak
+10-14 acceptable
+15-19 good
+20-30 perfect
+
+AT+GSN : IMEI code
+
+AT+CFUN=0 : shutdown
+AT+CFUN=1,1 : reset or power on
+AT+CFUN=4 : airplane mode on
+AT+CFUN=1 : airplane mode off
+
+ATI : Product Identification Information
+AT&V : Current Configuration
+
+
+
+
+https://digispark.ir/practical-at-commands-in-sim800l-gsm-module/
+https://daneshjookit.com/blog/133_best-50-at-commands-for-sim800-boards.html

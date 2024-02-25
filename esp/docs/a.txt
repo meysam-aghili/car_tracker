@@ -1,0 +1,38 @@
+ C:\Users\meysam\.platformio\penv\Scripts\platformio.exe device monitor --environment nodemcuv2 -f log2file
+
+https://roboticsbackend.com/arduino-object-oriented-programming-oop/
+
+ log to topic
+ general setting file
+ if default ommunication
+
+
+
+ void gps_standby() {
+  // standby GPS
+  gps_port.print("$PMTK161,0*28\r\n");
+}
+
+void gps_wakeup() {
+  // exit GPS standby
+  gps_port.print("\r\n");
+}
+
+
+Active Low GPIOs:
+
+    D0 (GPIO16)
+    D3 (GPIO0)
+    D4 (GPIO2)
+    D8 (GPIO15) 
+
+Active High GPIOs:
+
+    D1 (GPIO5)
+    D2 (GPIO4)
+    D5 (GPIO14)
+    D6 (GPIO12)
+    D7 (GPIO13)
+    D9 (GPIO3)
+    D10 (GPIO1)
+    D11 (GPIO9)

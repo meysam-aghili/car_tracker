@@ -8,12 +8,13 @@ def on_connect(client, userdata, flags, return_code):
     else:
         print("could not connect, return code:", return_code)
 
-client = mqtt.Client("ClientPub")
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1,"ClientPub")
 client.username_pw_set(username="admin", password="admin")
 client.on_connect=on_connect
-client.connect('localhost', 1883)
+client.connect('localhost', 1883) # akranaaa.ddns.net
 
-topic = "test"
+
+topic = "gps_test"
 msg_count = 0
 
 try:

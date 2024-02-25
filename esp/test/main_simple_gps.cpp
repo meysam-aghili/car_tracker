@@ -1,12 +1,9 @@
-#include <ESP8266WiFi.h>
 #include <SoftwareSerial.h>
 #include <TinyGPSPlus.h>
 #include <ArduinoJson.h>
 
-SoftwareSerial gps_serial_at(4, 5); // D7 , D8
-TinyGPSPlus gps;
-unsigned long gps_check_time_empty;
-unsigned long gps_check_time_publish;
+SoftwareSerial gps_serial_at(D7, D8); // D7 , D8
+TinyGPSPlus gps_client;
 
 auto add_zero = [](String a)
 {
@@ -19,64 +16,54 @@ auto add_zero = [](String a)
     return a;
   }
 };
-String gps_json_data;
 
-boolean get_gps_data()
+String get_gps_data()
 {
-  while (gps_serial_at.available() > 0)
+  for (unsigned long start = millis(); millis() - start < 1000;)
   {
-    if (gps.encode(gps_serial_at.read()) && gps.location.isValid() && gps.time.isValid())
+    while (gps_serial_at.available())
     {
-      StaticJsonDocument<256> doc;
-      doc["datetime"] = String(gps.date.year()) + "-" + add_zero(String(gps.date.month())) + "-" + add_zero(String(gps.date.day())) + " " + add_zero(String(gps.time.hour())) + ":" + add_zero(String(gps.time.minute())) + ":" + add_zero(String(gps.time.second()));
-      doc["latitude"] = gps.location.lat();
-      doc["longitude"] = gps.location.lng();
-      doc["satellites"] = gps.satellites.value();
-      doc["altitude"] = gps.altitude.meters();
-      doc["speed"] = gps.speed.knots();
-      doc["course"] = gps.course.deg();
-      doc["hdop"] = gps.hdop.value();
-      serializeJson(doc, gps_json_data);
-      Serial.println(gps_json_data);
-      gps_check_time_empty = millis();
-      return true;
-    }
-    else
-    {
-      if ((millis() - gps_check_time_empty) >= 10000)
-      {
-        Serial.print(gps.encode(gps_serial_at.read()));
-        Serial.print(gps.location.isValid());
-        Serial.println(gps.time.isValid());
-        Serial.println(gps.satellites.value());
-        Serial.println(millis());
-        Serial.println("no gps data");
-        gps_check_time_empty = millis();
-      }
-      return false;
+      gps_client.encode(gps_serial_at.read());
     }
   }
-  return false;
+  if (gps_client.location.isValid() == 1)
+  {
+    DynamicJsonDocument doc(1024);
+    String gps_json_data = "";
+    doc["datetime"] = String(gps_client.date.year()) + "-" + add_zero(String(gps_client.date.month())) + "-" + add_zero(String(gps_client.date.day())) + " " + add_zero(String(gps_client.time.hour())) + ":" + add_zero(String(gps_client.time.minute())) + ":" + add_zero(String(gps_client.time.second()));
+    doc["latitude"] = gps_client.location.lat();
+    doc["longitude"] = gps_client.location.lng();
+    doc["satellites"] = gps_client.satellites.value();
+    doc["altitude"] = gps_client.altitude.meters();
+    doc["speed"] = gps_client.speed.knots();
+    doc["course"] = gps_client.course.deg();
+    doc["hdop"] = gps_client.hdop.value();
+    serializeJson(doc, gps_json_data);
+    return gps_json_data;
+  }
+  else
+  {
+    return "{'is_valid_encode':" + String(gps_client.encode(gps_serial_at.read())) 
+    +",'is_valid_location':" + String(gps_client.location.isValid()) 
+    +",'is_valid_time':" + String(gps_client.time.isValid()) 
+    +",'satellites_value':" + String(gps_client.satellites.value()) + "}";
+  }
 }
+
+unsigned long gps_check_time_publish;
+unsigned long gps_interval_time_publish = 5000;
 
 void setup()
 {
-  ESP.wdtDisable();    // disable software wdt to prevent resets
-  ESP.wdtEnable(8000); // enable software wdt and set time to 8 second to prevent resets
   Serial.begin(115200);
-  Serial.println("Wait...");
   gps_serial_at.begin(9600);
-  delay(1000);
-  Serial.println("setup succeded");
+  gps_check_time_publish = millis();
 }
-
 void loop()
 {
-  ESP.wdtFeed();
-  
-  if ((millis() - gps_check_time_publish) >= 5000)
+  if (millis() - gps_check_time_publish > gps_interval_time_publish)
   {
-    get_gps_data();
-    gps_check_time_publish = millis();
+  Serial.println(get_gps_data());
+  gps_check_time_publish = millis();
   }
 }

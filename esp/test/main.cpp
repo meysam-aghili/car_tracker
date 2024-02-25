@@ -1,405 +1,325 @@
-#include <ESP8266WiFi.h>
+#include <Arduino.h>
 #include <SoftwareSerial.h>
-//#include <StreamDebugger.h>
-#include <PubSubClient.h>
-#include <TinyGPSPlus.h>
-#include <ArduinoJson.h>
 
-#define GPS_POWER_PIN 16
-#define SerialMon Serial
+#define HAS_NETWORK
+#define USE_CONNECTION_GSM
+#define HAS_SENSOR_GPS
+// #define HAS_SENSOR_MQ9
+// #define HAS_SENSOR_HIT
+// #define HAS_SENSOR_HIT2
+// #define HAS_SENSOR_DHT
+// #define HAS_SENSOR_MOTION
+// #define HAS_SENSOR_RELAY
+// #define HAS_SENSOR_BUZZER
+
+//-----------------------------------------------------Connection
+#if defined(HAS_NETWORK)
+#if defined(USE_CONNECTION_GSM)
 #define TINY_GSM_MODEM_SIM800
-#define TINY_GSM_DEBUG SerialMon
-#include <TinyGsmClient.h>
-SoftwareSerial gsm_serial(14, 12);  // RX, TX D5, D6
-//StreamDebugger debugger(gsm_serial, SerialMon);
-
-//TinyGsm        modem(debugger);
-TinyGsm        modem(gsm_serial);
-TinyGsmClient modem_client(modem);
-PubSubClient  modem_mqtt(modem_client);
-
-WiFiClient wifi_client;
-PubSubClient  wifi_mqtt(wifi_client);
-
-SoftwareSerial gps_serial(4, 5); // D2 , D1
-//StreamDebugger gps_debugger(gps_serial, SerialMon);
-TinyGPSPlus gps;
-
-unsigned long gps_check_time = millis();
-
-
-// Add a reception delay, if needed.
-// This may be needed for a fast processor at a slow baud rate.
-//#define TINY_GSM_YIELD() { delay(2); }
-
-String default_communication = "wifi"; // gprs wifi
-
-String apn = "mtnirancell";
-String gprs_user = "";
-String gprs_pass = "";
-String gsm_pin_code = "21831454";
-
+#include "gsm.h"
+String apn_name = "mtnirancell";
+String username = "";
+String password = "";
+String sim_pin_cod = "21831454";
+SoftwareSerial gsm_serial(3, 1);
+// StreamDebugger debugger(gsm_serial, Serial);
+// TinyGsm        modem(debugger);
+TinyGsm gsm(gsm_serial);
+TinyGsmClient connection_client(gsm);
+connection_gsm conn(apn_name, username, password, sim_pin_cod, &gsm);
+#else
+#include "wifi_manager.h"
 String wifi_ssid = "tplink_";
-String wifi_pass = "Sh!@#123";
+String wifi_password = "Sh!@#123";
+WiFiClient connection_client;
+connection_wifi conn(wifi_ssid, wifi_password);
+#endif
+#endif
 
-String broker = "192.168.1.102";//"akrana.ddns.net"; //if local wifi we must use 192.168.1.<>
+//-----------------------------------------------------MQTT
+#if defined(HAS_NETWORK)
+#include "mqtt.h"
+String broker_ip = "192.168.1.102"; // "akranaa.ddns.net";
 uint16_t broker_port = 1883;
-String broker_client_id = "GsmClientTest";
-String broker_user = "admin";
-String broker_pass = "admin";
-String topicTest = "test";
+String broker_client_id = "esp8266_1";
+String broker_username = "admin";
+String broker_password = "admin";
+PubSubClient mqtt_client_(connection_client);
+mqtt mqtt_conn(broker_ip, broker_port, broker_client_id, broker_username, broker_password, mqtt_client_);
+#endif
 
-auto add_zero = [](String a) {
-        if (a.length()==1)
-        {
-          return "0"+a;
-        }
-          else{return a;}
-      };
-String gps_json_data;
+//-----------------------------------------------------GPS
+#if defined(HAS_SENSOR_GPS)
+#include "TinyGPS++.h"
+#include <ArduinoJson.h>
+#define RXGPS D7 // 13
+#define TXGPS D8 // 15
+SoftwareSerial gps_serial_at(RXGPS, TXGPS);
+TinyGPSPlus gps_client;
+String gps_topic = "gps";
+unsigned long gps_check_time_publish;
+unsigned long gps_interval_time_publish = 5000;
 
-boolean check_connection_gsm(){
-  if (!modem.isNetworkConnected())
+auto add_zero = [](String a)
+{
+  if (a.length() == 1)
   {
-    SerialMon.println("no network");
-    SerialMon.println("connecting to modem network...");
-  
-    if (!modem.waitForNetwork(180000L)) 
-    {
-      SerialMon.println("modem network failed");
-      delay(5000);
-      return 0;
-    }
-    else
-    { 
-      SerialMon.println("modem network connected"); 
-
-      return 1;
-    }
-  }
-  else{return 1;}
-}
-
-boolean check_connection_gprs(){
-  if (!modem.isGprsConnected())
-  {
-    SerialMon.println("no gprs network");
-    SerialMon.println("connecting to ");
-    SerialMon.println(apn);
-    boolean status = modem.gprsConnect(apn.c_str(), gprs_user.c_str(), gprs_pass.c_str());
-    if (!status) {
-      SerialMon.println("gprs connection attempt failed");
-      delay(10000);
-      return 0;
-    }
-    else 
-    { 
-      SerialMon.println("gprs connected"); 
-      return 1;
-    }
-  }
-  else{return 1;}
-}
-
-boolean check_connection_gsm_gprs(){
-  if (check_connection_gsm())
-  {
-    return check_connection_gprs();
+    return "0" + a;
   }
   else
   {
-    return 0;
+    return a;
   }
-}
+};
 
-boolean check_connection_wifi(){
-  if(WiFi.status() != WL_CONNECTED)
+String get_gps_data()
+{
+  for (unsigned long start = millis(); millis() - start < 1000;)
   {
-    SerialMon.println("no wifi network");
-    SerialMon.print("connecting to ");
-    SerialMon.print(wifi_ssid);
-    WiFi.begin(wifi_ssid, wifi_pass);
-    unsigned long start_time = millis();
-    while (WiFi.status() != WL_CONNECTED && (millis() - start_time) <= 50000)
+    while (gps_serial_at.available())
     {
-      delay(500);
-      SerialMon.print(".");
-    }
-    if (WiFi.status() != WL_CONNECTED) 
-    {
-      SerialMon.println("");
-      SerialMon.println("wifi connection attempt failed");
-      delay(5000);
-      return 0;
-    }
-    else
-    {
-      SerialMon.println("");
-      SerialMon.println("wifi connected");
-      SerialMon.print("ip address is: ");
-      SerialMon.println(WiFi.localIP());
-      delay(100);
-      return 1;
+      gps_client.encode(gps_serial_at.read());
     }
   }
-  else{return 1;}
-}
-
-boolean check_connection(){
-  if (!strcmp(default_communication.c_str(),"gprs")) 
+  if (gps_client.location.isValid() == 1)
   {
-    return check_connection_gsm_gprs();
-  }
-  else if (!strcmp(default_communication.c_str(),"wifi"))
-  {
-    return check_connection_wifi();
+    DynamicJsonDocument doc(1024);
+    String gps_json_data = "";
+    doc["datetime"] = String(gps_client.date.year()) + "-" + add_zero(String(gps_client.date.month())) + "-" + add_zero(String(gps_client.date.day())) + " " + add_zero(String(gps_client.time.hour())) + ":" + add_zero(String(gps_client.time.minute())) + ":" + add_zero(String(gps_client.time.second()));
+    doc["latitude"] = gps_client.location.lat();
+    doc["longitude"] = gps_client.location.lng();
+    doc["satellites"] = gps_client.satellites.value();
+    doc["altitude"] = gps_client.altitude.meters();
+    doc["speed"] = gps_client.speed.knots();
+    doc["course"] = gps_client.course.deg();
+    doc["hdop"] = gps_client.hdop.value();
+    serializeJson(doc, gps_json_data);
+    return gps_json_data;
   }
   else
   {
-    SerialMon.println("error : choose correct default_communication");
-    return 0;
+    return "{'is_valid_encode':" + String(gps_client.encode(gps_serial_at.read())) + ",'is_valid_location':" + String(gps_client.location.isValid()) + ",'is_valid_time':" + String(gps_client.time.isValid()) + ",'satellites_value':" + String(gps_client.satellites.value()) + "}";
   }
 }
 
-boolean check_connection_mqtt_broker(PubSubClient& mqtt) 
+#if defined(HAS_NETWORK)
+void publish_gps_data(String gps_json_data)
 {
-  if (!mqtt.connected()) 
+  if (mqtt_conn.publish_to_mqtt_broker(gps_topic.c_str(), gps_json_data.c_str()))
   {
-    SerialMon.println("mqtt broker not connected.");
-    SerialMon.print("connecting to ");
-    SerialMon.println(broker);
-    unsigned long start_time = millis();
-    while (!mqtt.connected() && (millis() - start_time) <= 10000)
-    {
-      mqtt.connect(broker_client_id.c_str(), broker_user.c_str(), broker_pass.c_str());
-      delay(500);
-    }
-    if (!mqtt.connected())
-    {
-      SerialMon.println("mqtt broker connection attempt failed");
-      delay(5000);
-      return 0;
-    }
-    else
-    {
-      SerialMon.println("mqtt broker connected");
-      delay(100);
-      return 1;
-    }
-  }
-  else{return 1;}
-}
-
-boolean setup_modem()
-{
-  SerialMon.println("initializing modem");
-  modem.init();
-  //SerialMon.print("modem info: ");
-  //SerialMon.println(modem.getModemInfo());
-  //SerialMon.print("sim status: ");
-  //SerialMon.println(modem.getSimStatus());
-  if (modem.getSimStatus() == 3)
-  {
-    modem.simUnlock(gsm_pin_code.c_str()); 
-  }
-  return check_connection_gsm_gprs();
-}
-
-boolean setup_wifi()
-{
-  WiFi.disconnect();
-  SerialMon.println("initializing wifi");
-  return check_connection_wifi();
-}
-
-boolean setup_connection()
-{
-  if (!strcmp(default_communication.c_str(),"gprs")) {
-    return setup_modem();
-  }
-  else if (!strcmp(default_communication.c_str(),"wifi"))
-  {
-    return setup_wifi();
+    Serial.println("gps data published to mqtt broker");
   }
   else
   {
-    SerialMon.println("error : choose correct default_communication");
-    return 0;
+    Serial.println("cant publish gps data to mqtt broker");
   }
 }
+#endif
+#endif
 
-void mqtt_callback(char* topic, byte* payload, unsigned int len) {
-  SerialMon.print("message arrived [");
-  SerialMon.print(topic);
-  SerialMon.print("]: ");
-  SerialMon.write(payload, len);
-  SerialMon.println();
-}
+//-----------------------------------------------------Relay
+#if defined(HAS_SENSOR_RELAY)
+#define RELAY_PIN D0 // 16  Active Low
+#endif
 
-boolean setup_mqtt_broker(){
-  if (!strcmp(default_communication.c_str(),"gprs"))
-  {
-    SerialMon.println("initializing mqtt broker");
-    modem_mqtt.setServer(broker.c_str(), broker_port);
-    //modem_mqtt.setCallback(mqtt_callback);
-    return check_connection_mqtt_broker(modem_mqtt);
-  }
-  else if (!strcmp(default_communication.c_str(),"wifi"))
-  {
-    SerialMon.println("initializing mqtt broker");
-    wifi_mqtt.setServer(broker.c_str(), broker_port);
-    //wifi_mqtt.setCallback(mqtt_callback);
-    return check_connection_mqtt_broker(wifi_mqtt);
-  }
-  else
-  {
-    SerialMon.println("error : choose correct default_communication");
-    return 0;
-  }
-}
+//-----------------------------------------------------Buzzer
+#if defined(HAS_SENSOR_BUZZER)
+#define BUZZER_PIN D5 // 14  Active High
+#endif
 
-boolean get_gps_data()
+//-----------------------------------------------------Hit
+#if defined(HAS_SENSOR_HIT)
+#define HIT_SENSOR_PIN D4 // 2 Active Low
+String hit_sensor_topic = "hit_sensor";
+unsigned long hit_sensor_check_time_publish;
+
+IRAM_ATTR void hit_sensor()
 {
-  while (gps_serial.available()>0) 
+  if (millis() - hit_sensor_check_time_publish > 1000)
   {
-    if (gps.encode(gps_serial.read()) && gps.location.isValid() && gps.time.isValid()) 
-    {
-      //DynamicJsonDocument doc(1024);
-      //doc["datetime"] = String(gps.date.year())+"-"+add_zero(String(gps.date.month()))+"-"+add_zero(String(gps.date.day()))+" "+add_zero(String(gps.time.hour()))+":"+add_zero(String(gps.time.minute()))+":"+add_zero(String(gps.time.second()));
-      //doc["latitude"] = gps.location.lat();
-      //doc["longitude"] = gps.location.lng();
-      //doc["satellites"] = gps.satellites.value();
-      //doc["altitude"] = gps.altitude.meters();
-      //doc["speed"] = gps.speed.knots();
-      //doc["course"] = gps.course.deg();
-      //doc["hdop"] = gps.hdop.value();
-      //serializeJson(doc, gps_json_data);
-      //SerialMon.println(gps_json_data);
-      SerialMon.println("got gps");
-      gps_check_time = millis();
-      return true;
-    }
-    else
-    {
-      if ((millis()-gps_check_time) >=10000)
-      {
-        SerialMon.print(gps.encode(gps_serial.read()));
-        SerialMon.print(gps.location.isValid());
-        SerialMon.println(gps.time.isValid());
-        SerialMon.println(gps.satellites.value());
-        SerialMon.println(millis());
-        SerialMon.println("no gps data");
-        gps_check_time = millis();
-      }
-      return false;
-    }
-  }
-  return false;
-}
-
-boolean mqtt_publish(const char *topic, const char *payload)
-{
-  if (!strcmp(default_communication.c_str(),"gprs"))
-  {
-    if (check_connection_mqtt_broker(modem_mqtt))
-    {
-      return modem_mqtt.publish(topic, payload);
-    }
-    else{return 0;}
-  }
-  else if (!strcmp(default_communication.c_str(),"wifi"))
-  {
-    //if (check_connection_mqtt_broker(wifi_mqtt))
+    Serial.println("hit detected");
+    digitalWrite(RELAY_PIN, HIGH);
+    digitalWrite(BUZZER_PIN, HIGH);
+    String data;
+    DynamicJsonDocument doc(1024);
+    doc["device_id"] = ESP.getChipId();
+    doc["hit"] = 1;
+    serializeJson(doc, data);
+    // if (!mqtt_conn.publish_to_mqtt_broker(hit_sensor_topic.c_str(), data.c_str()))
     //{
-      //wifi_mqtt.publish(topic, payload);
-      delay(1000);
-      SerialMon.println("before pub");
-      //if (!wifi_mqtt.connected()) 
-      //{
-       // SerialMon.println("before pub2");
-       // wifi_mqtt.connect("testclient", "admin", "admin");
-      //}
-      //SerialMon.println("before pub3");
-      return wifi_mqtt.publish("test2", "ok");
-    //}
-    //else{return 0;}
-  }
-  else
-  {
-    SerialMon.println("error : choose correct default_communication");
-    return 0;
+    //   Serial.println("cant publish hit_sensor data to mqtt broker");
+    // }
+    hit_sensor_check_time_publish = millis();
   }
 }
+#endif
 
-boolean send_gps_data()
+//-----------------------------------------------------HIT2
+#if defined(HAS_SENSOR_HIT2)
+#define HIT2_SENSOR_PIN D1 // 5 Active High
+String hit2_sensor_topic = "hit2_sensor";
+unsigned long hit2_sensor_check_time_publish;
+
+IRAM_ATTR void hit2_sensor()
 {
-  //gps.location.isUpdated()
-  //if (get_gps_data())
-  //{
-    SerialMon.println("sending data");
-    return mqtt_publish(topicTest.c_str(), "{}"); //gps_json_data.c_str()
-  //}
-  //return 0;
+  if (millis() - hit2_sensor_check_time_publish > 1000)
+  {
+    Serial.println("hit2 detected");
+    String data;
+    DynamicJsonDocument doc(1024);
+    doc["device_id"] = ESP.getChipId();
+    doc["hit2"] = 1;
+    serializeJson(doc, data);
+    // if (!mqtt_conn.publish_to_mqtt_broker(hit2_sensor_topic.c_str(), data.c_str()))
+    //{
+    //   Serial.println("cant publish hit2_sensor data to mqtt broker");
+    // }
+    hit2_sensor_check_time_publish = millis();
+  }
 }
+#endif
 
-void setup() {
-  //pinMode(GPS_POWER_PIN ,OUTPUT);
-  //digitalWrite(GPS_POWER_PIN ,LOW);
-  ESP.wdtDisable(); //disable software wdt to prevent resets
-  ESP.wdtEnable(8000); //enable software wdt and set time to 8 second to prevent resets
-  SerialMon.begin(115200);
-  SerialMon.println("Wait...");
-  
+//-----------------------------------------------------MQ9
+#if defined(HAS_SENSOR_MQ9)
+#define GAS_SENSOR_PIN A0
+String gas_sensor_topic = "gas_sensor";
+
+void gas_sensor()
+{
+  int gas_value = 0;
+  for (int i = 0; i < 10; i++)
+  {
+    gas_value += analogRead(GAS_SENSOR_PIN);
+    delay(50);
+  }
+  gas_value = gas_value / 10;
+  String data;
+  DynamicJsonDocument doc(1024);
+  doc["device_id"] = ESP.getChipId();
+  doc["gas_value"] = gas_value;
+  serializeJson(doc, data);
+  Serial.println(data);
+  // if (!mqtt_conn.publish_to_mqtt_broker(gas_sensor_topic.c_str(), data.c_str()))
+  //{
+  //   Serial.println("cant publish gas_sensor data to mqtt broker");
+  // }
+}
+#endif
+
+//-----------------------------------------------------Motion
+#if defined(HAS_SENSOR_MOTION)
+#define MOTION_SENSOR_PIN D2 // 4 Active High
+String motion_sensor_topic = "motion_sensor";
+unsigned long motion_sensor_check_time_publish;
+
+IRAM_ATTR void motion_sensor()
+{
+  if (millis() - motion_sensor_check_time_publish > 1000)
+  {
+    Serial.println("motion detected");
+    digitalWrite(RELAY_PIN, LOW);
+    digitalWrite(BUZZER_PIN, LOW);
+    String data;
+    DynamicJsonDocument doc(1024);
+    doc["device_id"] = ESP.getChipId();
+    doc["motion"] = 1;
+    serializeJson(doc, data);
+    // if (!mqtt_conn.publish_to_mqtt_broker(motion_sensor_topic.c_str(), data.c_str()))
+    //{
+    //   Serial.println("cant publish motion_sensor data to mqtt broker");
+    // }
+    motion_sensor_check_time_publish = millis();
+  }
+}
+#endif
+
+//-----------------------------------------------------DHT
+#if defined(HAS_SENSOR_DHT)
+#include "DHT.h"
+#define DHT_PIN D6 // 12 Active High
+#define DHTTYPE DHT22
+
+DHT dht(DHT_PIN, DHTTYPE);
+String dht_sensor_topic = "dht_sensor";
+
+void dht_sensor()
+{
+  String data;
+  DynamicJsonDocument doc(1024);
+  doc["device_id"] = ESP.getChipId();
+  doc["humidity_value"] = dht.readHumidity();
+  doc["temperature_value"] = dht.readTemperature();
+  // doc["computeHeatIndex"] = dht.computeHeatIndex();
+  serializeJson(doc, data);
+  Serial.println(data);
+  // if (!mqtt_conn.publish_to_mqtt_broker(gas_sensor_topic.c_str(), data.c_str()))
+  //{
+  //   Serial.println("cant publish gas_sensor data to mqtt broker");
+  // }
+}
+#endif
+
+//------------------------------------------------------------------------------------------------------------------------
+void setup()
+{
+  ESP.wdtDisable();
+  ESP.wdtEnable(8000);
+  Serial.begin(115200);
+
+#if defined(HAS_NETWORK)
+  Serial.println("initializing connection");
+#if defined(USE_CONNECTION_GSM)
   gsm_serial.begin(115200);
-  delay(1000);
-  if (!setup_connection())
-  {
-    SerialMon.println("setup connection failed");
-    ESP.reset();
-  }
-  SerialMon.println("setup connection succeded");
+#endif
 
-  //digitalWrite(GPS_POWER_PIN ,HIGH);
-  gps_serial.begin(9600);
-  delay(1000);
-  
-  if (!setup_mqtt_broker())
+  if (!conn.setup_connection())
   {
-    SerialMon.println("setup mqtt broker failed");
-    ESP.reset();
+    Serial.println("setup connection failed");
+    ESP.restart();
   }
-  SerialMon.println("setup mqtt broker succeded");
-  
-  SerialMon.println("setup succeded");
+  Serial.println("setup connection succeded");
+  //mqtt_conn.setup_mqtt_broker();
+#endif
+
+#if defined(HAS_SENSOR_GPS)
+  gps_serial_at.begin(9600);
+  gps_check_time_publish = millis();
+#endif
+  /*
+  hit_sensor_check_time_publish = millis();
+  pinMode(HIT_SENSOR_PIN, INPUT);
+  attachInterrupt(digitalPinToInterrupt(HIT_SENSOR_PIN), hit_sensor, RISING);
+  pinMode(HIT2_SENSOR_PIN, INPUT);
+  attachInterrupt(digitalPinToInterrupt(HIT2_SENSOR_PIN), hit2_sensor, RISING);
+  pinMode(RELAY_PIN, OUTPUT);
+  pinMode(MOTION_SENSOR_PIN, INPUT);
+  attachInterrupt(digitalPinToInterrupt(MOTION_SENSOR_PIN), motion_sensor, RISING);
+  pinMode(BUZZER_PIN, OUTPUT);
+  dht.begin();
+  */
+  Serial.println("setup succeded");
 }
 
-void loop() {
-  
+void loop()
+{
   ESP.wdtFeed();
-  //if (!check_connection())
-  //{
-  //  SerialMon.println("connection failed");
-  //}
-  
-  if (!strcmp(default_communication.c_str(),"gprs"))
-  {
-    modem_mqtt.loop();
-  }
-  else if (!strcmp(default_communication.c_str(),"wifi"))
-  {
-    wifi_mqtt.loop();
-  }
-  else
-  {
-    SerialMon.println("error : choose correct default_communication");
-    return;
-  }
-  
-  
-  SerialMon.println(send_gps_data());
+//#if defined(HAS_NETWORK)
+ // mqtt_conn.mqtt_loop();
+//#endif
 
-  //get_gps_data();
-  
-  
+
+  /*
+  if (millis() - gps_check_time_publish > gps_interval_time_publish)
+  {
+
+    String gps_data = get_gps_data();
+    Serial.println(gps_data);
+    if (gps_data.length() > 50)
+    {
+      // publish_gps_data();
+    }
+    gps_check_time_publish = millis();
+  }
+  */
+
 }
-

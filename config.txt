@@ -1,11 +1,16 @@
 ------------------------------------done
 
+sudo mount -t drvfs C:/Users/meysam/Desktop/github /mnt/
+cd /mnt/car_tracker
+
 docker compose --profile iot up -d
 docker-compose --profile iot down
 docker compose --profile iot --profile kafka up -d
 
-netsh interface portproxy add v4tov4 listenport=8084 listenaddress=0.0.0.0 connectport=8085 connectaddress=172.20.150.76
-netsh interface portproxy add v4tov4 listenport=1883 listenaddress=0.0.0.0 connectport=1883 connectaddress=172.20.150.76
+hostname -I
+netsh interface portproxy add v4tov4 listenport=8084 listenaddress=0.0.0.0 connectport=8085 connectaddress=172.20.65.42
+netsh interface portproxy add v4tov4 listenport=1883 listenaddress=0.0.0.0 connectport=1883 connectaddress=172.20.65.42
+netsh interface portproxy add v4tov4 listenport=15672 listenaddress=0.0.0.0 connectport=15672 connectaddress=172.20.65.42
 
 
 {
