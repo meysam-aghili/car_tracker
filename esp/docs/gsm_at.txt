@@ -1,0 +1,48 @@
+https://digispark.ir/practical-at-commands-in-sim800l-gsm-module/
+https://daneshjookit.com/blog/133_best-50-at-commands-for-sim800-boards.html
+
+ATI : Product Identification Information
+AT&V : Current Configuration
+AT+GSN : IMEI code
+
+AT+CSQ get_signal_rate
+AT+GSN get_imei_code
+AT+CFUN=0 set_turn_off
+AT+CFUN=1,1 set_turn_on_or_restart
+AT+CFUN=4 set_auto_pilot_on
+AT+CFUN=1 set_auto_pilot_off
+
+AT+CPIN? get_sim_lock_status
+AT+CPIN="1234" set_unlock_sim_pin
+
+AT+CREG? get_network_status
+
+AT+CLBS=1,1 get_approximal_location
+
+AT+SAPBR=3,1,Contype,"GPRS"
+AT+SAPBR=3,1,APN,"mtnirancell"
+AT+SAPBR=3,1,USER,""
+AT+SAPBR=3,1,PWD,""
+AT+SAPBR=1,1 set_gprs_on
+AT+CGATT=1 set_gprs_on
+AT+SAPBR=2,1 get_gprs_status
+AT+CGATT? get_gprs_status
+
+AT+SAPBR=0,1 set_gprs_off
+
+AT+CIPSHUT will close *all* open connections
+AT+CGATT=0 Detach from GPRS
+
+-------------------
+AT+CSQ : gsm signal quality
+2-9 very weak
+10-14 acceptable
+15-19 good
+20-30 perfect
+-------------------
+AT+CBC : battery
++CBC: x,y,z
+x:state 1:no charger 2:charging 3:full charged
+y:battery level(0-100)
+z:voltage
+-------------------

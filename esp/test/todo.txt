@@ -1,0 +1,2 @@
+connect gps (when gps_init called , serials will break apart)
+write wifi
