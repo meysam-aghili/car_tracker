@@ -1,2 +1,3 @@
-connect gps (when gps_init called , serials will break apart)
+learn about transstors
+add transistor to power off/on gsm when AT not work or somewhere else
 write wifi
